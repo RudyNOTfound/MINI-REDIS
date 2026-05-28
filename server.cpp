@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include "store.h"
 #include <thread>
+#include "wal.h"
+#include "snapshot.h"
 
 #define PORT 6379
 
@@ -24,7 +26,7 @@ std::vector<std::string> splitCmd(const std::string &s)
 }
 
 // Run one command, return the response string
-std::string handleCommand(Store &db, const std::string &raw)
+std::string handleCommand(Store &db, WAL &wal, const std::string &raw)
 {
     auto p = splitCmd(raw);
     if (p.empty())
@@ -51,6 +53,7 @@ std::string handleCommand(Store &db, const std::string &raw)
                 ttl = std::stoi(p[4]);
         }
         db.set(p[1], p[2], ttl);
+        wal.log("SET " + p[1] + " " + p[2] + (ttl > 0 ? " " + std::to_string(ttl) : ""));
         return "+OK\r\n";
     }
 
@@ -68,6 +71,9 @@ std::string handleCommand(Store &db, const std::string &raw)
     {
         if (p.size() < 2)
             return "-ERR wrong args\r\n";
+        int n = db.del(p[1]);
+        if (n > 0)
+            wal.log("DEL " + p[1]);
         return ":" + std::to_string(db.del(p[1])) + "\r\n";
     }
 
@@ -78,7 +84,7 @@ std::string handleCommand(Store &db, const std::string &raw)
 }
 
 // Handle one connected client until they disconnect
-void handleClient(int client_fd, Store &db)
+void handleClient(int client_fd, Store &db, WAL &wal)
 {
     char buf[1024];
     std::string leftover; // holds incomplete data between recv() calls
@@ -102,7 +108,7 @@ void handleClient(int client_fd, Store &db)
             if (line.empty())
                 continue;
 
-            std::string resp = handleCommand(db, line);
+            std::string resp = handleCommand(db, wal, line); // add wal here
             if (!resp.empty())
                 send(client_fd, resp.c_str(), resp.size(), 0);
         }
@@ -112,6 +118,24 @@ void handleClient(int client_fd, Store &db)
 int main()
 {
     Store db;
+    WAL wal("redis.wal");
+
+    // On startup: load snapshot first, then replay WAL on top
+    loadSnapshot(db, "redis.snap");
+    wal.replay(db);
+
+    std::cout << "Loaded " << db.size() << " keys from disk.\n";
+
+    // Background thread: snapshot every 60 seconds
+    std::thread([&db, &wal]()
+                {
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::seconds(60));
+            saveSnapshot(db, "redis.snap");
+            wal.clear();
+            std::cout << "Snapshot saved.\n";
+        } })
+        .detach();
 
     // Step 1: Create socket
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -151,11 +175,11 @@ int main()
             continue;
 
         // Spawn a new thread for this client — it runs handleClient independently
-        std::thread([client_fd, &db]()
+        std::thread([client_fd, &db, &wal]()
                     {
-        handleClient(client_fd, db);
-        close(client_fd); })
-            .detach(); // detach = thread runs on its own, we don't wait for it
+    handleClient(client_fd, db, wal);
+    close(client_fd); })
+            .detach();
     }
 
     close(server_fd);

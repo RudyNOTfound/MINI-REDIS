@@ -1,6 +1,18 @@
 #include "store.h"
 #include <chrono>
 
+
+// In store.cpp — implement them:
+void Store::setRaw(const std::string& key, const std::string& val, long long expire_at) {
+    std::lock_guard<std::mutex> lock(mtx);
+    data[key] = {val, expire_at};
+}
+
+std::unordered_map<std::string, Entry> Store::getAll() {
+    std::lock_guard<std::mutex> lock(mtx);
+    return data;   // returns a copy — safe to use outside the lock
+}
+
 // Current unix timestamp in seconds
 long long Store::now() {
     using namespace std::chrono;
@@ -15,6 +27,8 @@ void Store::set(const std::string& key, const std::string& val, int ttl) {
     long long exp = (ttl > 0) ? now() + ttl : -1;
     data[key] = {val, exp};
 }
+
+
 
 // GET key → value string, or "(nil)"
 std::string Store::get(const std::string& key) {
