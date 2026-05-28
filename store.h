@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <unordered_map>
+#include <mutex> 
 
 // One value stored in our database
 struct Entry {
@@ -18,5 +19,6 @@ public:
 
 private:
     std::unordered_map<std::string, Entry> data;   // THE hashmap
+    std::mutex  mtx;  
     long long now();
 };

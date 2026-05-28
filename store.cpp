@@ -11,6 +11,7 @@ long long Store::now() {
 
 // SET key value [ttl]
 void Store::set(const std::string& key, const std::string& val, int ttl) {
+    std::lock_guard<std::mutex> lock(mtx);
     long long exp = (ttl > 0) ? now() + ttl : -1;
     data[key] = {val, exp};
 }
@@ -35,10 +36,12 @@ std::string Store::get(const std::string& key) {
 
 // DELETE key → 1 if deleted, 0 if not found
 int Store::del(const std::string& key) {
+    std::lock_guard<std::mutex> lock(mtx);
     return data.erase(key);   // erase() returns count removed
 }
 
 // How many keys are currently stored
 int Store::size() {
+    std::lock_guard<std::mutex> lock(mtx);
     return data.size();
 }
