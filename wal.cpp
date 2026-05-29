@@ -2,10 +2,11 @@
 #include "store.h"
 #include <fstream>
 #include <sstream>
+using namespace std;
 
-WAL::WAL(const std::string &path) : path_(path)
+WAL::WAL(const string &path) : path_(path)
 {
-    out_.open(path, std::ios::app); // append — never blow away existing log
+    out_.open(path, ios::app); // append — never blow away existing log
 }
 
 WAL::~WAL()
@@ -14,7 +15,7 @@ WAL::~WAL()
         out_.close();
 }
 
-void WAL::log(const std::string &line)
+void WAL::log(const string &line)
 {
     if (!out_.is_open())
         return;
@@ -35,17 +36,17 @@ void WAL::log(const std::string &line)
 // called once on startup — rebuilds in-memory state from the log file
 void WAL::replay(Store &db)
 {
-    std::ifstream in(path_);
+    ifstream in(path_);
     if (!in.is_open())
         return; // no log file = fresh start, nothing to replay
 
-    std::string line;
-    while (std::getline(in, line))
+    string line;
+    while (getline(in, line))
     {
         if (line.empty())
             continue;
-        std::istringstream ss(line);
-        std::string op, key, val;
+        istringstream ss(line);
+        string op, key, val;
         int ttl = -1;
         ss >> op >> key;
         if (op == "SET")
@@ -66,5 +67,5 @@ void WAL::clear()
 {
     if (out_.is_open())
         out_.close();
-    out_.open(path_, std::ios::trunc);
+    out_.open(path_, ios::trunc);
 }

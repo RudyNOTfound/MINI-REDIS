@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include "store.h"
+using namespace std;
 
-void saveSnapshot(Store& db, const std::string& path);
-void loadSnapshot(Store& db, const std::string& path);
+void saveSnapshot(Store &db, const string &path);
+void loadSnapshot(Store &db, const string &path);

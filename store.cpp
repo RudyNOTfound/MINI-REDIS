@@ -1,11 +1,12 @@
 #include "store.h"
 #include <chrono>
+using namespace std;
 
 Store::Store(int max_keys) : max_keys_(max_keys) {}
 
 long long Store::now()
 {
-    using namespace std::chrono;
+    using namespace chrono;
     return duration_cast<seconds>(
                system_clock::now().time_since_epoch())
         .count();
@@ -14,7 +15,7 @@ long long Store::now()
 // moves a key to the front of lru_list
 // this is why we store the iterator in Entry — erase + push_front is O(1)
 // if we stored the key's index instead, finding it would be O(n)
-void Store::touch(const std::string &key)
+void Store::touch(const string &key)
 {
     auto it = data.find(key);
     if (it == data.end())
@@ -29,14 +30,14 @@ void Store::evict()
 {
     if (lru_list.empty())
         return;
-    std::string lru_key = lru_list.back();
+    string lru_key = lru_list.back();
     lru_list.pop_back();
     data.erase(lru_key);
 }
 
-void Store::set(const std::string &key, const std::string &val, int ttl)
+void Store::set(const string &key, const string &val, int ttl)
 {
-    std::lock_guard<std::mutex> lock(mtx);
+    lock_guard<mutex> lock(mtx);
     // if key already exists, clean it out of lru_list before reinserting
     // otherwise lru_list and data go out of sync and everything breaks
     auto it = data.find(key);
@@ -54,9 +55,9 @@ void Store::set(const std::string &key, const std::string &val, int ttl)
     data[key] = {val, exp, lru_list.begin()};
 }
 
-std::string Store::get(const std::string &key)
+string Store::get(const string &key)
 {
-    std::lock_guard<std::mutex> lock(mtx);
+    lock_guard<mutex> lock(mtx);
     auto it = data.find(key);
     if (it == data.end())
         return "(nil)";
@@ -76,9 +77,9 @@ std::string Store::get(const std::string &key)
     return e.value;
 }
 
-int Store::del(const std::string &key)
+int Store::del(const string &key)
 {
-    std::lock_guard<std::mutex> lock(mtx);
+    lock_guard<mutex> lock(mtx);
     auto it = data.find(key);
     if (it == data.end())
         return 0;
@@ -89,16 +90,16 @@ int Store::del(const std::string &key)
 
 int Store::size()
 {
-    std::lock_guard<std::mutex> lock(mtx);
+    lock_guard<mutex> lock(mtx);
     return data.size();
 }
 
 // used when loading from snapshot
 // has to properly initialize lru_it — if you skip this, touch() will
 // try to erase a garbage iterator and segfault immediately
-void Store::setRaw(const std::string &key, const std::string &val, long long expire_at)
+void Store::setRaw(const string &key, const string &val, long long expire_at)
 {
-    std::lock_guard<std::mutex> lock(mtx);
+    lock_guard<mutex> lock(mtx);
 
     // Remove existing entry if key already exists
     auto existing = data.find(key);
@@ -115,10 +116,10 @@ void Store::setRaw(const std::string &key, const std::string &val, long long exp
 
 // returns a safe copy for snapshotting
 // deliberately excludes lru_it — that iterator is only valid on the live list
-std::unordered_map<std::string, SnapEntry> Store::getAll()
+unordered_map<string, SnapEntry> Store::getAll()
 {
-    std::lock_guard<std::mutex> lock(mtx);
-    std::unordered_map<std::string, SnapEntry> result;
+    lock_guard<mutex> lock(mtx);
+    unordered_map<string, SnapEntry> result;
     for (auto &[key, entry] : data)
     {
         result[key] = {entry.value, entry.expire_at};

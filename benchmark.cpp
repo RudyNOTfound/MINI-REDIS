@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+using namespace std;
 
 int connect_to(int port)
 {
@@ -21,17 +22,17 @@ int connect_to(int port)
 // simple ping-pong benchmark — send one command, wait for response, repeat
 // not the most accurate (pipelining would be faster) but good enough to
 // compare SET vs GET vs PING and spot bottlenecks
-double bench(int fd, const std::string &cmd, int n)
+double bench(int fd, const string &cmd, int n)
 {
     char buf[256];
-    auto start = std::chrono::high_resolution_clock::now();
+    auto start = chrono::high_resolution_clock::now();
     for (int i = 0; i < n; i++)
     {
         send(fd, cmd.c_str(), cmd.size(), 0);
         recv(fd, buf, sizeof(buf), 0);
     }
-    auto end = std::chrono::high_resolution_clock::now();
-    return std::chrono::duration<double, std::milli>(end - start).count();
+    auto end = chrono::high_resolution_clock::now();
+    return chrono::duration<double, milli>(end - start).count();
 }
 
 int main()
@@ -39,24 +40,24 @@ int main()
     const int N = 100000;
     int fd = connect_to(6379);
 
-    std::cout << "Benchmarking mini-redis (" << N << " ops each)\n\n";
+    cout << "Benchmarking mini-redis (" << N << " ops each)\n\n";
 
     bench(fd, "PING\n", 1000); // warmup — first few calls are always slower
 
     double set_ms = bench(fd, "SET benchkey benchvalue\n", N);
     double set_rps = N / (set_ms / 1000.0);
-    std::cout << "SET: " << (int)set_rps << " req/sec"
-              << "  (" << set_ms / N << "ms avg)\n";
+    cout << "SET: " << (int)set_rps << " req/sec"
+         << "  (" << set_ms / N << "ms avg)\n";
 
     double get_ms = bench(fd, "GET benchkey\n", N);
     double get_rps = N / (get_ms / 1000.0);
-    std::cout << "GET: " << (int)get_rps << " req/sec"
-              << "  (" << get_ms / N << "ms avg)\n";
+    cout << "GET: " << (int)get_rps << " req/sec"
+         << "  (" << get_ms / N << "ms avg)\n";
 
     double ping_ms = bench(fd, "PING\n", N);
     double ping_rps = N / (ping_ms / 1000.0);
-    std::cout << "PING: " << (int)ping_rps << " req/sec"
-              << "  (" << ping_ms / N << "ms avg)\n";
+    cout << "PING: " << (int)ping_rps << " req/sec"
+         << "  (" << ping_ms / N << "ms avg)\n";
 
     close(fd);
     return 0;

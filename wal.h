@@ -1,20 +1,21 @@
 #pragma once
 #include <string>
 #include <fstream>
+using namespace std;
 
-class Store; 
+class Store;
 
 class WAL
 {
 public:
-    WAL(const std::string &path);
+    WAL(const string &path);
     ~WAL();
-    void log(const std::string &line); 
-    void replay(Store &db);            
-    void clear();                      
+    void log(const string &line);
+    void replay(Store &db);
+    void clear();
 
 private:
-    std::string path_;
-    std::ofstream out_;
+    string path_;
+    ofstream out_;
     int write_count_ = 0; // tracks writes between flushes
 };
