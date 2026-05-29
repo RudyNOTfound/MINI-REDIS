@@ -14,7 +14,7 @@
 
 #define PORT 6379
 
-// Split "SET name alice" into ["SET", "name", "alice"]
+
 std::vector<std::string> splitCmd(const std::string &s)
 {
     std::vector<std::string> out;
@@ -25,7 +25,7 @@ std::vector<std::string> splitCmd(const std::string &s)
     return out;
 }
 
-// Run one command, return the response string
+
 std::string handleCommand(Store &db, WAL &wal, const std::string &raw)
 {
     auto p = splitCmd(raw);
@@ -34,8 +34,7 @@ std::string handleCommand(Store &db, WAL &wal, const std::string &raw)
 
     std::string cmd = p[0];
     for (auto &c : cmd)
-        c = toupper(c); // case-insensitive
-
+        c = toupper(c); 
     if (cmd == "PING")
         return "+PONG\r\n";
 
@@ -53,6 +52,8 @@ std::string handleCommand(Store &db, WAL &wal, const std::string &raw)
                 ttl = std::stoi(p[4]);
         }
         db.set(p[1], p[2], ttl);
+        // log to WAL before returning — if we crash after set() but before log(),
+        // we lose the write. order matters here.
         wal.log("SET " + p[1] + " " + p[2] + (ttl > 0 ? " " + std::to_string(ttl) : ""));
         return "+OK\r\n";
     }
@@ -63,7 +64,8 @@ std::string handleCommand(Store &db, WAL &wal, const std::string &raw)
             return "-ERR wrong args\r\n";
         std::string val = db.get(p[1]);
         if (val == "(nil)")
-            return "$-1\r\n"; // nil bulk string
+            return "$-1\r\n"; 
+        // RESP format: $<length>\r\n<value>\r\n
         return "$" + std::to_string(val.size()) + "\r\n" + val + "\r\n";
     }
 
@@ -74,7 +76,7 @@ std::string handleCommand(Store &db, WAL &wal, const std::string &raw)
         int n = db.del(p[1]);
         if (n > 0)
             wal.log("DEL " + p[1]);
-        return ":" + std::to_string(n) + "\r\n"; // ← use n, not db.del() again
+        return ":" + std::to_string(n) + "\r\n"; // n not db.del() again — key is already gone
     }
 
     if (cmd == "DBSIZE")
@@ -83,21 +85,21 @@ std::string handleCommand(Store &db, WAL &wal, const std::string &raw)
     return "-ERR unknown command '" + p[0] + "'\r\n";
 }
 
-// Handle one connected client until they disconnect
 void handleClient(int client_fd, Store &db, WAL &wal)
 {
     char buf[1024];
-    std::string leftover; // holds incomplete data between recv() calls
+    std::string leftover; 
 
     while (true)
     {
         int n = recv(client_fd, buf, sizeof(buf) - 1, 0);
         if (n <= 0)
-            break; // 0 = clean disconnect, -1 = error
+            break; 
         buf[n] = '\0';
         leftover += buf;
 
-        // Process every complete line (commands end with \n)
+        // TCP doesn't guarantee a full command arrives in one recv() call
+        // buffer everything and split on newlines to get complete commands
         size_t pos;
         while ((pos = leftover.find('\n')) != std::string::npos)
         {
@@ -108,7 +110,7 @@ void handleClient(int client_fd, Store &db, WAL &wal)
             if (line.empty())
                 continue;
 
-            std::string resp = handleCommand(db, wal, line); // add wal here
+            std::string resp = handleCommand(db, wal, line); 
             if (!resp.empty())
                 send(client_fd, resp.c_str(), resp.size(), 0);
         }
@@ -117,27 +119,17 @@ void handleClient(int client_fd, Store &db, WAL &wal)
 
 int main()
 {
-    Store db(100000); // ← evict LRU keys when store exceeds 100k keys
+    Store db(100000); 
     WAL wal("redis.wal");
 
-    // On startup: load snapshot first, then replay WAL on top
+    // startup order matters: snapshot first (bulk), then WAL on top (recent changes)
     loadSnapshot(db, "redis.snap");
     wal.replay(db);
 
     std::cout << "Loaded " << db.size() << " keys from disk.\n";
 
-    // Background thread: snapshot every 60 seconds
-    // std::thread([&db, &wal]()
-    //             {
-    //     while (true) {
-    //         std::this_thread::sleep_for(std::chrono::seconds(60));
-    //         saveSnapshot(db, "redis.snap");
-    //         wal.clear();
-    //         std::cout << "Snapshot saved.\n";
-    //     } })
-    //     .detach();
-
-    // Step 1: Create socket
+    // without SO_REUSEADDR, restarting the server within ~60s fails with
+    // "address already in use" because the OS holds the port in TIME_WAIT
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0)
     {
@@ -145,7 +137,7 @@ int main()
         return 1;
     }
 
-    // Step 2: Bind to port 6379
+
     int opt = 1;
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
@@ -160,11 +152,10 @@ int main()
         return 1;
     }
 
-    // Step 3: Start listening
     listen(server_fd, 10);
     std::cout << "Mini Redis listening on port " << PORT << "...\n";
 
-    // Step 4 + 5: Accept clients and handle their commands
+ 
     while (true)
     {
         sockaddr_in client_addr{};
@@ -174,7 +165,9 @@ int main()
         if (client_fd < 0)
             continue;
 
-        // Spawn a new thread for this client — it runs handleClient independently
+        // one thread per client — simple and correct for this scale
+        // downside: 10k clients = 10k threads = bad
+        // proper fix would be a fixed thread pool with a job queue
         std::thread([client_fd, &db, &wal]()
                     {
     handleClient(client_fd, db, wal);
