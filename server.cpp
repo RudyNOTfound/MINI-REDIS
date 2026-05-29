@@ -74,7 +74,7 @@ std::string handleCommand(Store &db, WAL &wal, const std::string &raw)
         int n = db.del(p[1]);
         if (n > 0)
             wal.log("DEL " + p[1]);
-        return ":" + std::to_string(db.del(p[1])) + "\r\n";
+        return ":" + std::to_string(n) + "\r\n"; // ← use n, not db.del() again
     }
 
     if (cmd == "DBSIZE")

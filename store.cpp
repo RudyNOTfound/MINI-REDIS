@@ -5,7 +5,17 @@
 void Store::setRaw(const std::string &key, const std::string &val, long long expire_at)
 {
     std::lock_guard<std::mutex> lock(mtx);
-    data[key] = {val, expire_at};
+    
+     // Remove existing entry if key already exists
+    auto existing = data.find(key);
+    if (existing != data.end()) {
+        lru_list.erase(existing->second.lru_it);
+        data.erase(existing);
+    }
+
+    // Add to LRU list exactly like set() does
+    lru_list.push_front(key);
+    data[key] = {val, expire_at, lru_list.begin()};
 }
 
 std::unordered_map<std::string, SnapEntry> Store::getAll()
